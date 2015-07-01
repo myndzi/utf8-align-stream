@@ -1,0 +1,29 @@
+{
+  "name": "utf8-align-stream",
+  "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/myndzi/utf8-align-stream"
+  },
+  "description": "Streams2 interface to align chunks to UTF-8 character boundaries",
+  "keywords": [
+    "utf8",
+    "utf-8",
+    "align",
+    "stream"
+  ],
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha test"
+  },
+  "author": "Kris Reeves",
+  "license": "ISC",
+  "devDependencies": {
+    "debug": "^2.2.0",
+    "mocha": "^2.2.5",
+    "should": "^7.0.1"
+  },
+  "dependencies": {
+    "expect": "^1.6.0"
+  }
+}
