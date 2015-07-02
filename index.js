@@ -22,58 +22,42 @@ function AlignStream() {
 }
 inherits(AlignStream, Transform);
 
+function isContinuation(n) { return (n >> 6) === 0x02; }
+
 AlignStream.prototype._transform = function (_chunk, encoding, callback) {
-    var chunk = _chunk;
+    var chunk = _chunk, len = _chunk.length, n, pos;
     
+    // if we have stored a piece, prepend it first
     if (this.piece !== noBuf) {
-        // prepend leftovers from last time
-        chunk = Buffer.concat([ this.piece, _chunk ]);
+        chunk = Buffer.concat([ this.piece, chunk ]);
         this.piece = noBuf;
     }
     
-    // max length of a utf-8 character is 6 octets, so we start 6 octets from the end
-    var len = chunk.length,
-        pos = len - Math.max(6, len),
-        chrs, expected, i;
-    
-    outer: while (pos < len) {
-        chrs = utflen(chunk[pos]);
+    // top two bits 10 = continuation byte; 11 = start byte
+    // if chunk ends in either of these, we might have an interrupted utf-8 sequence
+    if ((chunk[len-1] >> 6) >= 2) {
+        // the longest utf-8 sequence is 6 bytes, so we only have to check the last 5
+        // if the chunk is shorter than 5, we don't want to go past the start
         
-        i = pos++;
-        
-        // trivial case
-        if (chrs === 1) { continue; }
-        
-        // we expect chrs bytes in this utf-8 sequence, but it's possible that
-        // a new sequence-beginning character exists in this range; this is
-        // invalid utf-8 but a decoder will ignore the first bytes as invalid and
-        // pick up decoding from the "in the middle" sequence start character
-        // in this case, we want to buffer as though this were the detected utf-8
-        // start sequence, to ensure the full sequence is passed along
-        
-        // pos points to the first continuation byte
-        expected = Math.min(i + chrs, len - i);
-        
-        while (pos < expected) {
-            if ((chunk[pos] & 0xC0) !== 0x80) {
-                // invalid byte, terminate sequence here
-                continue outer;
+        for (n = Math.max(len - 5, 0), pos = len - 1; pos >= n; pos--) {
+            if (isContinuation(chunk[pos])) { continue; }
+            // we've hit either an ascii literal or a utf-8 start-byte
+            // utflen returns 1 for ascii literals, so expected will
+            // always be less than the total length, and we won't do anything
+            // the continuation bytes are erroneous, so we can pass them as-is
+            var expected = utflen(chunk[pos]);
+            
+            // if we expect more bytes than we got, we need to store the end chunk and wait
+            // for the next part of the stream to complete it
+            if (pos + expected > len) {
+                this.piece = chunk.slice(pos);
+                chunk = chunk.slice(0, pos);
             }
-            pos++;
-        }
-        // 'pos' should be pointing to the character after the sequence;
-        // we encountered no invalid continuation bytes. check if we're
-        // at the end of the chunk and store the partial if so
-        
-        if (i + chrs > len) {
-            // we expect more bytes than we have; store the partial
-            // and slice the chunk so we don't output any of it
-            this.piece = chunk.slice(i, len);
-            chunk = chunk.slice(0, i);
-            break outer;
+            break;
         }
     }
     
+    // write our (possibly modified) chunk, if it contains any data
     if (chunk.length) {
         this.push(chunk);
     }
